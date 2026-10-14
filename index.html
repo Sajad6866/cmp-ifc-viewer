@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CMP 3D IFC Web Viewer</title>
+  <style>
+    body, html {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #f4f6f8;
+    }
+    #myCanvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+      cursor: grab;
+    }
+    #myCanvas:active {
+      cursor: grabbing;
+    }
+    #info-panel {
+      position: absolute;
+      top: 12px;
+      left: 12px;
+      background: rgba(255, 255, 255, 0.95);
+      padding: 12px 16px;
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+      max-width: 300px;
+      font-size: 13px;
+      color: #1e293b;
+      z-index: 10;
+      border-left: 4px solid #2563eb;
+    }
+    #info-panel h4 {
+      margin: 0 0 6px 0;
+      font-size: 14px;
+      color: #0f172a;
+    }
+    #info-panel p {
+      margin: 4px 0;
+      word-break: break-all;
+    }
+    #loading {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(15, 23, 42, 0.85);
+      color: white;
+      padding: 12px 24px;
+      border-radius: 6px;
+      font-size: 14px;
+      z-index: 20;
+    }
+  </style>
+</head>
+<body>
+
+  <div id="loading">Loading 3D IFC Model...</div>
+
+  <div id="info-panel">
+    <h4>3D BIM Component Inspector</h4>
+    <p id="elem-name"><b>Click any 3D element</b> to inspect its IFC details.</p>
+    <p id="elem-id" style="color: #64748b; font-size: 12px;"></p>
+  </div>
+
+  <canvas id="myCanvas"></canvas>
+
+  <script type="module">
+    import { Viewer, WebIFCLoaderPlugin } from "https://cdn.jsdelivr.net/npm/@xeokit/xeokit-sdk@2.6.61/dist/xeokit-sdk.es.min.js";
+    import * as WebIFC from "https://cdn.jsdelivr.net/npm/web-ifc@0.0.51/web-ifc-api.js";
+
+    const viewer = new Viewer({
+      canvasId: "myCanvas",
+      transparent: true
+    });
+
+    // Set initial camera angle
+    viewer.camera.eye = [-8, 12, -12];
+    viewer.camera.look = [4, 3, 3];
+    viewer.camera.up = [0, 1, 0];
+
+    const IfcAPI = new WebIFC.IfcAPI();
+    IfcAPI.SetWasmPath("https://cdn.jsdelivr.net/npm/web-ifc@0.0.51/");
+
+    IfcAPI.Init().then(() => {
+      const ifcLoader = new WebIFCLoaderPlugin(viewer, {
+        WebIFC,
+        IfcAPI,
+        objectDefaults: {
+          IfcSpace: { visible: false } // Hide room volume boxes so building elements are clear
+        }
+      });
+
+      const model = ifcLoader.load({
+        id: "dwellingModel",
+        src: "./model.ifc",
+        loadMetadata: true,
+        edges: true
+      });
+
+      model.on("loaded", () => {
+        document.getElementById("loading").style.display = "none";
+        viewer.cameraFlight.jumpTo(model);
+      });
+    });
+
+    // Highlight and show properties when clicking a component (RQ004)
+    let lastEntity = null;
+    viewer.scene.input.on("mouseclicked", (coords) => {
+      const hit = viewer.scene.pick({ canvasPos: coords });
+      const nameEl = document.getElementById("elem-name");
+      const idEl = document.getElementById("elem-id");
+
+      if (lastEntity) {
+        lastEntity.highlighted = false;
+      }
+
+      if (hit && hit.entity) {
+        lastEntity = hit.entity;
+        hit.entity.highlighted = true;
+        const metaObject = viewer.metaScene.metaObjects[hit.entity.id];
+        if (metaObject) {
+          nameEl.innerHTML = `<b>Element:</b> ${metaObject.name || "Unnamed"} (${metaObject.type})`;
+          idEl.innerHTML = `<b>IFC GUID:</b> ${metaObject.id}`;
+        } else {
+          nameEl.innerHTML = `<b>Element Selected</b>`;
+          idEl.innerHTML = `<b>ID:</b> ${hit.entity.id}`;
+        }
+      } else {
+        nameEl.innerHTML = "<b>Click any 3D element</b> to inspect its IFC details.";
+        idEl.innerHTML = "";
+      }
+    });
+  </script>
+</body>
+</html>
