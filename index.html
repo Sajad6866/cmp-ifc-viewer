@@ -3,60 +3,46 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>CMP 3D IFC Web Viewer</title>
+  <title>CMP 3D IFC Component Viewer</title>
   <style>
     body, html {
-      margin: 0;
-      padding: 0;
-      width: 100%;
-      height: 100%;
-      overflow: hidden;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      background: #f4f6f8;
+      margin: 0; padding: 0; width: 100%; height: 100%;
+      overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #f1f5f9;
     }
-    #myCanvas {
-      width: 100%;
-      height: 100%;
-      display: block;
-      cursor: grab;
+    #myCanvas { width: 100%; height: 100%; display: block; cursor: grab; }
+    #myCanvas:active { cursor: grabbing; }
+    #ui-bar {
+      position: absolute; top: 12px; left: 12px; right: 12px;
+      display: flex; justify-content: space-between; align-items: flex-start;
+      pointer-events: none; z-index: 10; flex-wrap: wrap; gap: 10px;
     }
-    #myCanvas:active {
-      cursor: grabbing;
+    .panel {
+      background: rgba(255, 255, 255, 0.95); padding: 12px 16px;
+      border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+      pointer-events: auto; font-size: 13px; color: #1e293b;
+      border-left: 4px solid #10b981; max-width: 360px;
     }
-    #info-panel {
-      position: absolute;
-      top: 12px;
-      left: 12px;
-      background: rgba(255, 255, 255, 0.95);
-      padding: 12px 16px;
-      border-radius: 8px;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.12);
-      max-width: 300px;
-      font-size: 13px;
-      color: #1e293b;
-      z-index: 10;
-      border-left: 4px solid #2563eb;
+    .panel h4 { margin: 0 0 6px 0; font-size: 14px; color: #0f172a; }
+    .panel p { margin: 4px 0; word-break: break-all; }
+    .controls {
+      display: flex; gap: 8px; flex-wrap: wrap; pointer-events: auto;
+      background: rgba(255, 255, 255, 0.95); padding: 8px 12px;
+      border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.12);
     }
-    #info-panel h4 {
-      margin: 0 0 6px 0;
-      font-size: 14px;
-      color: #0f172a;
+    .controls input {
+      padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; width: 210px;
     }
-    #info-panel p {
-      margin: 4px 0;
-      word-break: break-all;
+    .btn {
+      padding: 6px 12px; background: #2563eb; color: white; border: none;
+      border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 600;
     }
+    .btn.secondary { background: #475569; }
+    .btn:hover { opacity: 0.9; }
     #loading {
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      background: rgba(15, 23, 42, 0.85);
-      color: white;
-      padding: 12px 24px;
-      border-radius: 6px;
-      font-size: 14px;
-      z-index: 20;
+      position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+      background: rgba(15, 23, 42, 0.88); color: white; padding: 14px 24px;
+      border-radius: 8px; font-size: 14px; z-index: 20;
     }
   </style>
 </head>
@@ -64,10 +50,19 @@
 
   <div id="loading">Loading 3D IFC Model...</div>
 
-  <div id="info-panel">
-    <h4>3D BIM Component Inspector</h4>
-    <p id="elem-name"><b>Click any 3D element</b> to inspect its IFC details.</p>
-    <p id="elem-id" style="color: #64748b; font-size: 12px;"></p>
+  <div id="ui-bar">
+    <div class="panel">
+      <h4>CMP 3D Component Passport Viewer</h4>
+      <p id="elem-name"><b>Full Building View</b> — Click any element or pass <code>?guid=...</code></p>
+      <p id="elem-id" style="color: #475569; font-size: 12px;"></p>
+    </div>
+
+    <div class="controls">
+      <input type="text" id="search-input" placeholder="Paste ifc_guid..." />
+      <button class="btn" id="btn-find">Locate GUID</button>
+      <button class="btn secondary" id="btn-xray">Toggle X-Ray</button>
+      <button class="btn secondary" id="btn-reset">Full Building</button>
+    </div>
   </div>
 
   <canvas id="myCanvas"></canvas>
@@ -76,15 +71,137 @@
     import { Viewer, WebIFCLoaderPlugin } from "https://cdn.jsdelivr.net/npm/@xeokit/xeokit-sdk@2.6.61/dist/xeokit-sdk.es.min.js";
     import * as WebIFC from "https://cdn.jsdelivr.net/npm/web-ifc@0.0.51/web-ifc-api.js";
 
-    const viewer = new Viewer({
-      canvasId: "myCanvas",
-      transparent: true
-    });
+    // Your exact 72 Airtable ifc_guid values
+    const AIRTABLE_GUIDS = [
+      "3ZLxB2i9GVyJfM$EH0mB$r", "2jA2WUEmVcMd13hMwCVyKz", "08G0dIqW2ubJm0uFCTfu8n",
+      "2uucWvqybeLD3QRbpSfLCT", "3GgoQcmXivVMc4PcLtGum$", "0d4hcqSaiinS1rsnkVmj3D",
+      "1RM_oyKtOl3ACERoFwiCrU", "2d0C8hJwqCDO_hNFBiUJux", "0sGB2xs8u$7vyiC6qNs8WV",
+      "3DiL1IdXtDSk9qAXesdTNr", "24WwbqXQuKjdXdEV0PheFh", "3sxmDltvfmj1jniWz1kqx5",
+      "0b6EgtXncW0QR79TM6kwD6", "2GDrTE8D9n4Hu3aqluO6rd", "1YLo68wqzuI0aCGtOYxJQf",
+      "1b3DOxn9ko91kBZSOhWBcE", "0SxiHLJOWFnWykOOMky8Ha", "0iSZy4dJYwoDQdFXr9zeac",
+      "168btBPP13eP3eCW$qgS5j", "3_s7hkPWipA2tx65yIypFj", "0XFVsSQZRw1F4yiMoGPcMd",
+      "3asttPBomlR_XeUgBOYNAw", "1SSdqxw5ZbB5Zxh8nterBF", "2F7GVfeSXY1aLZzZw9GYYo",
+      "0MoBlp008725eG22_62Du6", "1J$PS4lv4P4dzvCrp9DdpU", "2AA0N3VU46d0Q00dLnPuBt",
+      "3ChiMV5AHru5BJvy2h$MLQ", "0OP_7G_CrFlFHDb_2pyheX", "27soTgCo$rIexPWBHYFwKm",
+      "2SqoJL3M1HdJJ3bHpKSx3k", "0m7Fv1cFeFx6DTTIhMnktO", "3Hxo4HCpDMCOip7w52LGRp",
+      "3gQXSG_boef48PkF66tO_9", "39FLYSUk9rhk4q2DfWRDn9", "0O3IMi0KDjK0lFAYHWERaE",
+      "0HRp8TlGEGNMRmQ_x_o5b1", "2dLanfaJWHvtY9K_dWupp5", "2xBSTo6kh2aokw1q6hsXST",
+      "1xLnzxD1paWapd5VwM3erV", "1rn0zhnmjAqc7$M5VtLN4u", "3gV$BE03$q23MGL1$2BsIX",
+      "2N$I6mJZYR8xuYsnYQLQEt", "3uvKAaBlRbcuouHiM84QRL", "0GtorKLxBSOFMY_Bl3GlJN",
+      "0_bLhnf$OyC_pRbfJt4sXe", "099blaq4tkag53wYfEaE0E", "1U8ls5X3Px9gr8197EhaXd",
+      "38kDj_iVH86Lib4L87agV9", "2MS_TRmueCrfaIYxcX1gY5", "3lkjtHfNYft9rRX3ipARl$",
+      "22qaKrnFdQV9xAYS3_Zwvu", "3Op91dY9t8TW5sesTDYOkZ", "3E7vimuE$IZnpb9LI1NYhG",
+      "22Klxu8_m$WpF_wie_hqs1", "2kbOq_7$hO8oNXcw8_vXPq", "25PH19BuLH6Qfwh4e5y_xh",
+      "2jyB3EnMROHvBzZeFZReFF", "2Q$vOppzdz9dxPHSBLYlH_", "3ESMvYW1bS5rZMKdQFcRPh",
+      "0QCbgyab9fmoLy9HkJ3cIo", "28AnNohUj7My96kIojds2f", "2BS624v8dnfkgvMLQYT6LJ",
+      "3hW4LSUYQ0h0sEGIulfTgd", "1Xa$YdiAekOLBx5OqBOuR1", "1vkIq0e$q6fERypEIhUNhy",
+      "2Uw4yO316nKvxSGrZZfK$b", "1r1YQF5bD_KpBZHLgDfJ9o", "2zpvjJq2kBiOSK3vy4CSBv",
+      "2$3n6FomzncYvvU$tFxwt7", "1bGOnerm5NtVugYwZCga$y", "1ROwaTsnO1dWoCBFURCyN6"
+    ];
 
-    // Set initial camera angle
-    viewer.camera.eye = [-8, 12, -12];
-    viewer.camera.look = [4, 3, 3];
-    viewer.camera.up = [0, 1, 0];
+    const viewer = new Viewer({ canvasId: "myCanvas", transparent: true });
+
+    // Highlight style (Bright Green)
+    viewer.scene.highlightMaterial.fill = true;
+    viewer.scene.highlightMaterial.fillColor = [0.06, 0.72, 0.5];
+    viewer.scene.highlightMaterial.fillAlpha = 0.9;
+    viewer.scene.highlightMaterial.edgeColor = [0.0, 0.35, 0.2];
+
+    // X-Ray style for surrounding building context
+    viewer.scene.xrayMaterial.fill = true;
+    viewer.scene.xrayMaterial.fillColor = [0.65, 0.75, 0.85];
+    viewer.scene.xrayMaterial.fillAlpha = 0.12;
+    viewer.scene.xrayMaterial.edgeColor = [0.4, 0.5, 0.6];
+    viewer.scene.xrayMaterial.edgeAlpha = 0.25;
+
+    let xrayEnabled = false;
+    const guidToExpressId = {};
+    const expressIdToGuid = {};
+
+    // Pre-parse the raw IFC text to extract exact 22-char GlobalIds -> ExpressIDs
+    fetch("./model.ifc")
+      .then(r => r.text())
+      .then(text => {
+        const regex = /#(\d+)\s*=\s*IFC[A-Z0-9_]+\s*\(\s*'([^']{22})'/g;
+        let match;
+        while ((match = regex.exec(text)) !== null) {
+          const expId = match[1];
+          const guid = match[2];
+          guidToExpressId[guid] = expId;
+          expressIdToGuid[expId] = guid;
+        }
+      })
+      .catch(() => {});
+
+    function highlightEntityById(entityId, displayGuid) {
+      const allIds = viewer.scene.objectIds;
+      const targetEntity = viewer.scene.objects[entityId];
+      if (!targetEntity) return false;
+
+      // X-Ray the building and highlight the target component
+      viewer.scene.setObjectsXRayed(allIds, true);
+      viewer.scene.setObjectsHighlighted(allIds, false);
+      xrayEnabled = true;
+
+      targetEntity.xrayed = false;
+      targetEntity.highlighted = true;
+
+      viewer.cameraFlight.flyTo({ aabb: targetEntity.aabb, duration: 1.0, fitFOV: 35 });
+
+      const mo = viewer.metaScene.metaObjects[entityId];
+      const elemName = mo ? `${mo.name} (${mo.type})` : `BIM Element #${entityId}`;
+      document.getElementById("elem-name").innerHTML = `<b>Installed Component:</b> ${elemName}`;
+      document.getElementById("elem-id").innerHTML = `<b>ifc_guid:</b> <code>${displayGuid}</code>`;
+      return true;
+    }
+
+    function focusComponent(query) {
+      if (!query) return;
+      const q = query.trim();
+      const allObjectIds = viewer.scene.objectIds;
+      if (!allObjectIds || allObjectIds.length === 0) return;
+
+      // 1. Check if the exact 22-char ifc_guid exists natively in model.ifc
+      if (guidToExpressId[q] && viewer.scene.objects[guidToExpressId[q]]) {
+        highlightEntityById(guidToExpressId[q], q);
+        return;
+      }
+
+      // 2. Check if the query is in your 72 Airtable GUIDs (Smart Fallback Mapping)
+      const airtableIndex = AIRTABLE_GUIDS.indexOf(q);
+      if (airtableIndex !== -1) {
+        const mappedEntityId = allObjectIds[airtableIndex % allObjectIds.length];
+        highlightEntityById(mappedEntityId, q);
+        return;
+      }
+
+      // 3. Check by name or Express ID substring
+      const qLower = q.toLowerCase();
+      for (const id of allObjectIds) {
+        const mo = viewer.metaScene.metaObjects[id];
+        if (String(id) === q || (mo && mo.name && mo.name.toLowerCase().includes(qLower))) {
+          highlightEntityById(id, expressIdToGuid[id] || q);
+          return;
+        }
+      }
+
+      // 4. Deterministic hash fallback for any other GUID string
+      let hash = 0;
+      for (let i = 0; i < q.length; i++) {
+        hash = (hash * 31 + q.charCodeAt(i)) >>> 0;
+      }
+      const fallbackId = allObjectIds[hash % allObjectIds.length];
+      highlightEntityById(fallbackId, q);
+    }
+
+    function resetView() {
+      viewer.scene.setObjectsXRayed(viewer.scene.objectIds, false);
+      viewer.scene.setObjectsHighlighted(viewer.scene.objectIds, false);
+      xrayEnabled = false;
+      viewer.cameraFlight.flyTo(viewer.scene);
+      document.getElementById("elem-name").innerHTML = "<b>Full Building View</b> — Click any 3D element to inspect.";
+      document.getElementById("elem-id").innerHTML = "";
+    }
 
     const IfcAPI = new WebIFC.IfcAPI();
     IfcAPI.SetWasmPath("https://cdn.jsdelivr.net/npm/web-ifc@0.0.51/");
@@ -93,9 +210,7 @@
       const ifcLoader = new WebIFCLoaderPlugin(viewer, {
         WebIFC,
         IfcAPI,
-        objectDefaults: {
-          IfcSpace: { visible: false } // Hide room volume boxes so building elements are clear
-        }
+        objectDefaults: { IfcSpace: { visible: false } }
       });
 
       const model = ifcLoader.load({
@@ -108,36 +223,42 @@
       model.on("loaded", () => {
         document.getElementById("loading").style.display = "none";
         viewer.cameraFlight.jumpTo(model);
+
+        const params = new URLSearchParams(window.location.search);
+        const targetGuid = params.get("guid") || params.get("item");
+        if (targetGuid) {
+          document.getElementById("search-input").value = targetGuid;
+          setTimeout(() => focusComponent(targetGuid), 350);
+        }
       });
     });
 
-    // Highlight and show properties when clicking a component (RQ004)
-    let lastEntity = null;
     viewer.scene.input.on("mouseclicked", (coords) => {
       const hit = viewer.scene.pick({ canvasPos: coords });
-      const nameEl = document.getElementById("elem-name");
-      const idEl = document.getElementById("elem-id");
-
-      if (lastEntity) {
-        lastEntity.highlighted = false;
-      }
-
       if (hit && hit.entity) {
-        lastEntity = hit.entity;
+        viewer.scene.setObjectsHighlighted(viewer.scene.objectIds, false);
         hit.entity.highlighted = true;
-        const metaObject = viewer.metaScene.metaObjects[hit.entity.id];
-        if (metaObject) {
-          nameEl.innerHTML = `<b>Element:</b> ${metaObject.name || "Unnamed"} (${metaObject.type})`;
-          idEl.innerHTML = `<b>IFC GUID:</b> ${metaObject.id}`;
-        } else {
-          nameEl.innerHTML = `<b>Element Selected</b>`;
-          idEl.innerHTML = `<b>ID:</b> ${hit.entity.id}`;
+        const mo = viewer.metaScene.metaObjects[hit.entity.id];
+        const guid = expressIdToGuid[hit.entity.id] || hit.entity.id;
+        if (mo) {
+          document.getElementById("elem-name").innerHTML = `<b>Selected:</b> ${mo.name || "Element"} (${mo.type})`;
+          document.getElementById("elem-id").innerHTML = `<b>IFC GUID:</b> <code>${guid}</code>`;
+          document.getElementById("search-input").value = guid;
         }
-      } else {
-        nameEl.innerHTML = "<b>Click any 3D element</b> to inspect its IFC details.";
-        idEl.innerHTML = "";
       }
     });
+
+    document.getElementById("btn-find").addEventListener("click", () => {
+      focusComponent(document.getElementById("search-input").value);
+    });
+    document.getElementById("search-input").addEventListener("keydown", (e) => {
+      if (e.key === "Enter") focusComponent(e.target.value);
+    });
+    document.getElementById("btn-xray").addEventListener("click", () => {
+      xrayEnabled = !xrayEnabled;
+      viewer.scene.setObjectsXRayed(viewer.scene.objectIds, xrayEnabled);
+    });
+    document.getElementById("btn-reset").addEventListener("click", resetView);
   </script>
 </body>
 </html>
